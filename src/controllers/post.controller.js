@@ -4,7 +4,8 @@ import { Like } from '../models/Like.js';
 import { asyncHandler } from '../utils/AsyncHandler.js';
 import { User } from '../models/User.js';
 import { Comment } from '../models/Comment.js'
-import { sanitizeUser, sanitizePost } from '../utils/sanitizerObj.js';
+import { sanitizeUser, sanitizePost, sanitizeComment } from '../utils/sanitizerObj.js';
+import { extractTags } from '../utils/tagParser.js';
 
 // Get all posts based on time created (maybe need to change to most popular)
 export const getAllPosts = asyncHandler(
@@ -50,7 +51,8 @@ export const getAllPosts = asyncHandler(
 
     // Get total count for pagination info
     const totalPosts = await Post.countDocuments();
-
+    // console.log(posts)
+    // console.log(posts.map((post) => sanitizePost(post)))
     res.status(200).json({
       totalPosts,
       page, 
@@ -89,25 +91,37 @@ export const createPost = asyncHandler(async (req, res) => {
   if (!userId) {
     return res.status(401).json({ message: "Unauthorized: User ID missing" });
   }
-
+  
+  console.log("Request Body:", req.body); // Debugging
+  console.log("Request Files:", req.files); // Debugging
   const { content } = req.body;
 
   if(!content) {
-    return res.status(401).json({ message: "cotent is required" });
+    return res.status(401).json({ message: "content is required" });
   }
+  // Getting tag[] from post
+  const tags = extractTags(content);
 
 
   const post = new Post({
     content,
     author: userId,
-    images: req.files ? req.files.map(file => file.path) : [] // Store multiple image paths
+    tags,
+    image: req.files ? req.files.map(file => file.path) : [] // Store multiple image paths
   });
 
-  // await image save
-  const savePost = await post.save();
-  // Exclude `_id` and `__v` from response
-  const { _id, __v, ...postWithoutIdAndVersion } = savePost.toObject();
-  res.status(201).json(postWithoutIdAndVersion);
+  try {
+    // Save the post to the database
+    const savePost = await post.save();
+
+    // Exclude `_id` and `__v` from response
+    const { __v, ...postWithoutVersion } = savePost.toObject();
+
+    res.status(201).json(postWithoutVersion);
+  } catch (error) {
+    console.error("Error saving post:", error); // Log the error
+    res.status(500).json({ message: "Failed to create post", error: error.message });
+  }
 });
 
 
@@ -167,6 +181,7 @@ export const deletePost = asyncHandler(
 // Like/Unlike post
 export const toggleLike = asyncHandler(
   async (req, res) => {
+    try {
     const post = await Post.findById(req.params.id);
     if (!post) {
       return res.status(404).json({ message: 'Post not found' });
@@ -185,16 +200,21 @@ export const toggleLike = asyncHandler(
     if (existingLike) {
       await existingLike.deleteOne();
       post.likeCount--;
+      res.status(200).json({ message: 'Like- successfully' });
     } else {
       await Like.create({ 
         post: post._id, 
-        user: req.user._id 
+        user: userId
       });
       post.likeCount++;
     }
 
     await post.save();
-    res.status(200).json({ message: 'Like toggled successfully' });
+    res.status(200).json({ message: 'Like+ successfully' });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: 'Internal Server Error' });
+    }
   }
 );
 
@@ -289,7 +309,7 @@ export const getMostFrequentTag = async (req, res) => {
         }
       },
       { $sort: { count: -1 } }, // Sort by highest count
-      { $limit: 10 } // Get the top 10 tags
+      { $limit: 5 } // Get the top 5 tags
     ]).exec(); // Ensure execution
 
     // console.log("Top Tags:", result);

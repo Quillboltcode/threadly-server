@@ -153,7 +153,7 @@ const router = Router();
  *                 type: string
  *                 description: Post content
  *                 example: "This is my first post!"
- *               image:
+ *               images:
  *                 type: string
  *                 format: binary
  *                 description: Image file to upload
@@ -257,7 +257,7 @@ router.delete('/:id', authenticate('jwt'), deletePost);
  *         description: Unauthorized to like this post
  *       404:
  *         description: Post not found
- */router.post('/:id/like', authenticate('jwt'),toggleLike);
+ */router.post('/:id/like', authenticate('jwt'), toggleLike);
 
 
 /**

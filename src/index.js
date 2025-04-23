@@ -49,8 +49,11 @@ app.use(
       process.env.NODE_ENV === "production" ? undefined : false,
   })
 );
+// Middleware to parse JSON requests
+app.use(express.json()); // For JSON requests
+app.use(express.urlencoded({ extended: true })); // For URL-encoded requests
 
-app.use(express.json());
+// app.use(express.urlencoded({ extended: true }));
 
 // DB CONNECTION
 

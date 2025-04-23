@@ -35,7 +35,7 @@ export const sanitizeObject = (obj, fieldsToInclude) => {
 const getFieldsFor = (field) => {
   switch (field) {
     case "author":
-      return ["_id","username", "firstName", "lastName", "isVerified","avatar","followers","following"];
+      return ["_id","username", "firstName", "email","lastName", "isVerified","avatar","followers","following"];
     case "comment":
       return ["content", "author", "image", "createdAt", "updatedAt"];
     case "followers":
@@ -143,10 +143,10 @@ const userData = [
 ]
 // const sanitizedUser = sanitizeUser(userData);
 // console.log(sanitizedUser);
-const sanitizedPosts = sanitizePost(postData);
+// const sanitizedPosts = sanitizePost(postData);
 
-console.log(sanitizedPosts);
-// Output:
+// console.log(sanitizedPosts);
+// // Output:
 // [
 //   {
 //     _id: "67e4b33873e145ca0715e333",
