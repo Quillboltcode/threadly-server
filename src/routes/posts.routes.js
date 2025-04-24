@@ -209,7 +209,7 @@ router.delete('/:id', authenticate('jwt'), deletePost);
  * @swagger
  * /api/posts/{id}/like:
  *   post:
- *     summary: Toggle like on a post
+ *     summary: Toggle like on a post (like/unlike)
  *     tags:
  *       - Posts
  *     security:
@@ -218,16 +218,29 @@ router.delete('/:id', authenticate('jwt'), deletePost);
  *       - in: path
  *         name: id
  *         required: true
- *         description: Post ID
+ *         description: The ID of the post to like or unlike
  *         schema:
  *           type: string
  *     responses:
  *       200:
  *         description: Like toggled successfully
- *       403:
- *         description: Unauthorized to like this post
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 message:
+ *                   type: string
+ *                   example: Like+ successfully
+ *                 likeCount:
+ *                   type: integer
+ *                   example: 5
+ *       401:
+ *         description: Unauthorized - user ID missing or invalid token
  *       404:
  *         description: Post not found
+ *       500:
+ *         description: Internal server error
  */router.post('/:id/like', authenticate('jwt'), toggleLike);
 
 

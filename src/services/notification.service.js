@@ -1,6 +1,6 @@
 // services/notification.service.js
 import { socketIO } from '../index.js';
-
+import { onlineUsers } from '../index.js';
 export class NotificationService {
   /**
    * Send a notification to a specific user
@@ -10,30 +10,31 @@ export class NotificationService {
   static sendToUser(userId, notification) {
     // Get the socket ID for the user if they're online
     const socketId = this.getUserSocketId(userId);
-    
+
     if (socketId) {
       socketIO.to(socketId).emit('notification', notification);
       return true;
     }
     return false;
   }
-  
+
   /**
    * Send notifications to multiple users
    * @param {string[]} userIds - Array of user IDs to notify
    * @param {object} notification - The notification object
    */
+  // services/notification.service.js
   static sendToUsers(userIds, notification) {
-    const socketId = this.getUserSocketId(userIds[0]);
-    if (!socketId) {
-      console.warn('No socket ID found for user', userIds[0]);
-      return;
-    }
     userIds.forEach(userId => {
-      this.sendToUser(userId, notification);
+      const socketId = this.getUserSocketId(userId);
+      if (socketId) {
+        socketIO.to(socketId).emit('notification', notification);
+      } else {
+        console.warn(`User ${userId} is offline. Notification not sent.`);
+      }
     });
   }
-  
+
   /**
    * Broadcast a notification to all connected clients
    * @param {object} notification - The notification object
@@ -41,7 +42,7 @@ export class NotificationService {
   static broadcast(notification) {
     socketIO.emit('notification', notification);
   }
-  
+
   /**
    * Get the socket ID for a user
    * @param {string} userId - The user ID
@@ -49,9 +50,9 @@ export class NotificationService {
    */
   static getUserSocketId(userId) {
     // This uses the onlineUsers map from index.js
-    return onlineUsers.get(userId) || null;
+    return onlineUsers.get(userId);
   }
-  
+
   /**
    * Create a post comment notification
    * @param {string} postId - ID of the post
@@ -62,7 +63,7 @@ export class NotificationService {
   static async createCommentNotification(postId, postOwnerId, commenterId, commenterName) {
     // Don't notify the user of their own comments
     if (postOwnerId === commenterId) return;
-    
+
     const notification = {
       type: 'comment',
       message: `${commenterName} commented on your post`,
@@ -71,10 +72,10 @@ export class NotificationService {
       createdAt: new Date(),
       read: false
     };
-    
+
     this.sendToUser(postOwnerId, notification);
   }
-  
+
   /**
    * Create a post edit notification
    * @param {string} postId - ID of the post
@@ -89,10 +90,10 @@ export class NotificationService {
       createdAt: new Date(),
       read: false
     };
-    
+
     this.sendToUsers(subscriberIds, notification);
   }
-  
+
   /**
    * Create a post deletion notification
    * @param {string} postId - ID of the deleted post
@@ -106,7 +107,7 @@ export class NotificationService {
       createdAt: new Date(),
       read: false
     };
-    
+
     this.sendToUsers(subscriberIds, notification);
   }
 }

@@ -24,7 +24,7 @@ const io = new Server(httpServer, {
     methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
   }
 });
-console.log(io);
+
 
 initializePassport(app);
 // Setup Limiter 
@@ -96,7 +96,7 @@ app.use('/api/notifications', notificationRoutes);
 app.use('/api/search',searchRoutes)
 // Socket.io logic 
 // Store online users
-const onlineUsers = new Map();
+export const onlineUsers = new Map();
 
 io.on("connection", (socket) => {
   console.log("New client connected:", socket.id);
