@@ -3,7 +3,7 @@ import { Strategy as GoogleStrategy } from 'passport-google-oauth20';
 import { Strategy as JwtStrategy, ExtractJwt } from 'passport-jwt';
 import bcrypt from 'bcrypt';
 import jwt from 'jsonwebtoken';
-import { User } from '../models/User.js';
+import { User } from '../models/User.model.js';
 import dotenv from 'dotenv';
 import { asyncHandler } from '../utils/AsyncHandler.js';
 

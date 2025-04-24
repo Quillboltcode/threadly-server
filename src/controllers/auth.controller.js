@@ -1,4 +1,4 @@
-import { User } from '../models/User.js';
+import { User } from '../models/User.model.js';
 import { hashPassword, comparePassword, createToken } from '../middleware/auth.middleware.js';
 import { asyncHandler } from '../utils/AsyncHandler.js';
 import { sanitizeUser } from '../utils/sanitizerObj.js';

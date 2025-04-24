@@ -43,5 +43,9 @@ export const uploadImage = multer({
 });
 
 // Middleware for multiple images
-export const handlePostImages = uploadImage.array('images', 4);
+// Middleware for handling both content and images
+export const handlePostImages = uploadImage.fields([
+  { name: 'content', maxCount: 1 }, // Allow one 'content' field
+  { name: 'images', maxCount: 4 }   // Allow up to 4 images
+]);
 export const handleCommentImage = uploadImage.single('commentImage');

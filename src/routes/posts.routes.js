@@ -5,12 +5,13 @@ import {
   createPost,
   updatePost,
   deletePost,
-  toggleLike,
-  addComment,
-  getMostFrequentTag
 } from '../controllers/post.controller.js';
+import { toggleLike } from '../controllers/like.controller.js';
+import { addComment } from '../controllers/comment.controller.js';
+import { getMostFrequentTag, searchByTag } from '../controllers/tag.controller.js';
+
 import { authenticate } from '../middleware/auth.middleware.js';
-import { handleCommentImage, handlePostImages } from '../middleware/upload.middleware.js';
+import { handleCommentImage, handlePostImages, uploadImage } from '../middleware/upload.middleware.js';
 
 
 const router = Router();
@@ -62,42 +63,6 @@ const router = Router();
   *       404:
   *         description: Post not found
   * 
-  *   put:
-  *     summary: Update a post
-  *     tags:
-  *       - Posts
-  *     security:
-  *       - bearerAuth: []
-  *     parameters:
-  *       - in: path
-  *         name: id
-  *         required: true
-  *         description: Post ID
-  *         schema:
-  *           type: string
-  *     requestBody:
-  *       required: true
-  *       content:
-  *         application/json:
-  *           schema:
-  *             type: object
-  *             required:
-  *               - content
-  *             properties:
-  *               content:
-  *                 type: string
-  *                 description: Updated post content
-  *     responses:
-  *       200:
-  *         description: Post updated successfully
-  *         content:
-  *           application/json:
-  *             schema:
-  *               $ref: '#/components/schemas/Post'
-  *       403:
-  *         description: Unauthorized to update this post
-  *       404:
-  *         description: Post not found
   */router.get('/single/:id', getPost);
 
 /**
@@ -193,12 +158,17 @@ const router = Router();
  *     requestBody:
  *       required: true
  *       content:
- *         application/json:
+ *         multipart/form-data:
  *           schema:
  *             type: object
  *             properties:
  *               content:
  *                 type: string
+ *               images:
+ *                 type: array
+ *                 items:
+ *                   type: string
+ *                   format: binary
  *     responses:
  *       200:
  *         description: Post updated successfully
@@ -206,7 +176,8 @@ const router = Router();
  *         description: Unauthorized to update this post
  *       404:
  *         description: Post not found
- */router.put('/:id', authenticate('jwt'), handlePostImages, updatePost);
+ */router.put('/:id', authenticate('jwt'), uploadImage.array('images',4), updatePost);
+
 
 /**
  * @swagger
@@ -294,4 +265,57 @@ router.delete('/:id', authenticate('jwt'), deletePost);
   *       404:
   *         description: Post not found
   */router.post('/:id/comment', authenticate('jwt'),handleCommentImage, addComment);
+
+
+
+/**
+ * @swagger
+ * /api/posts/tags/search:
+ *   get:
+ *     summary: Search posts by tags
+ *     tags: [Posts]
+ *     parameters:
+ *       - in: query
+ *         name: tags
+ *         required: true
+ *         description: Comma-separated list of tags to filter posts (e.g., "travel,food")
+ *         schema:
+ *           type: string
+ *     responses:
+ *       200:
+ *         description: Posts retrieved successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 result:
+ *                   type: array
+ *                   items:
+ *                     type: object
+ *                     properties:
+ *                       _id:
+ *                         type: string
+ *                       content:
+ *                         type: string
+ *                       author:
+ *                         type: string
+ *                       tags:
+ *                         type: array
+ *                         items:
+ *                           type: string
+ *                       image:
+ *                         type: string
+ *                       createdAt:
+ *                         type: string
+ *                         format: date-time
+ *       400:
+ *         description: Tags query parameter is required
+ *       404:
+ *         description: No posts found with the given tags
+ *       500:
+ *         description: Server error
+ */router.get('/tags/search', searchByTag);
+
+
 export default router;

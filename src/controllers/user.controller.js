@@ -1,5 +1,5 @@
 
-import { User } from '../models/User.js';
+import { User } from '../models/User.model.js';
 import { asyncHandler } from '../utils/AsyncHandler.js';
 import { sanitizeUser } from '../utils/sanitizerObj.js';
 
@@ -23,22 +23,33 @@ export const getUserProfile = asyncHandler(
   }
 );
 
-// Update user profile
-export const updateProfile = asyncHandler(
-  async (req, res) => {
-    console.log("Update profile run")
-    const userId = req.user.userId || req.user._id || req.user.user?._id;
-    if (!userId) {
-      return res.status(401).json({ message: "Unauthorized: User ID missing" });
-    }
-    const updatedUser = await User.findByIdAndUpdate(
-      userId,
-      { $set: req.body },
-      { new: true }
-    );
-    res.status(200).json({user:sanitizeUser(updatedUser)});
+// Modify the controller to handle the uploaded file
+export const updateProfile = asyncHandler(async (req, res) => {
+  console.log("Update profile run");
+  const userId = req.user.userId || req.user._id || req.user.user?._id;
+  if (!userId) {
+    return res.status(401).json({ message: "Unauthorized: User ID missing" });
   }
-);
+
+  const updateData = { ...req.body };
+
+  // Add avatar URL to update data if a file was uploaded
+  if (req.file) {
+    updateData.avatar = `/uploads/${req.file.filename}`; // Adjust path as needed
+  }
+
+  const updatedUser = await User.findByIdAndUpdate(
+    userId,
+    { $set: updateData },
+    { new: true }
+  );
+
+  if (!updatedUser) {
+    return res.status(404).json({ message: "User not found" });
+  }
+
+  res.status(200).json({ user: sanitizeUser(updatedUser) });
+});
 
 // Get user by ID
 export const getUserById = asyncHandler(

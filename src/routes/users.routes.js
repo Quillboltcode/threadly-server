@@ -6,7 +6,7 @@ import { getUserById,
     updateProfile
 } from '../controllers/user.controller.js';
 import { authenticate } from '../middleware/auth.middleware.js';
-
+import { uploadImage } from '../middleware/upload.middleware.js';
 
 const router = Router();
 /**
@@ -30,10 +30,26 @@ const router = Router();
  * @swagger
  * /api/users/profile:
  *   put:
- *     description: Update current user's profile
+ *     summary: Update current user's profile
  *     tags: [User]
  *     security:
  *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         multipart/form-data:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               firstName:
+ *                 type: string
+ *               lastName:
+ *                 type: string
+ *               bio:
+ *                 type: string
+ *               avatar:
+ *                 type: string
+ *                 format: binary
  *     responses:
  *       200:
  *         description: Success
@@ -41,8 +57,8 @@ const router = Router();
  *         description: Unauthorized
  *       404:
  *         description: Not Found
- */
-router.put('/profile',  authenticate('jwt'), updateProfile);
+ */router.put('/profile', authenticate('jwt'), uploadImage.single('avatar'),updateProfile);
+
 
 /**
  * @swagger

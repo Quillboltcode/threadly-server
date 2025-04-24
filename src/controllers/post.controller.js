@@ -1,11 +1,13 @@
 
-import { Post } from '../models/Post.js';
-import { Like } from '../models/Like.js';
+import { Post } from '../models/Post.model.js';
+import { Like } from '../models/Like.model.js';
 import { asyncHandler } from '../utils/AsyncHandler.js';
-import { User } from '../models/User.js';
-import { Comment } from '../models/Comment.js'
-import { sanitizeUser, sanitizePost, sanitizeComment } from '../utils/sanitizerObj.js';
+import { User } from '../models/User.model.js';
+import { Comment } from '../models/Comment.model.js';
+import { sanitizePost, sanitizeComment } from '../utils/sanitizerObj.js';
 import { extractTags } from '../utils/tagParser.js';
+import Notification from '../models/Notification.model.js';
+import { NotificationService } from '../services/notification.service.js';
 
 // Get all posts based on time created (maybe need to change to most popular)
 export const getAllPosts = asyncHandler(
@@ -24,26 +26,25 @@ export const getAllPosts = asyncHandler(
     // Fetch posts with pagination
     const posts = await Post.find()
       .select("_id content tags author image comments commentCount likeCount createdAt updatedAt")
-      .populate("author","avatar username firstName lastName isVerified")
+      .populate("author", "avatar username firstName lastName isVerified")
       .sort({ createdAt: -1 })
       .skip(skip)
       .limit(limit)
       .exec()
-      .catch((err) =>{ 
+      .catch((err) => {
         if (err.name === 'CastError') {
           return res.status(400).json({ message: "Invalid page or limit" });
         } else {
           throw err;
         }
-        })
+      })
       .then((posts) => {
         if (!posts) {
           return res.status(404).json({ message: "No posts found" });
         }
         return posts;
       })
-      .catch((err) =>
-        {
+      .catch((err) => {
         console.error(err);
         return res.status(500).json({ message: "Internal server error" });
       });
@@ -55,7 +56,7 @@ export const getAllPosts = asyncHandler(
     // console.log(posts.map((post) => sanitizePost(post)))
     res.status(200).json({
       totalPosts,
-      page, 
+      page,
       totalPages: Math.ceil(totalPosts / limit),
       limit,
       posts: posts.map((post) => sanitizePost(post))
@@ -64,7 +65,7 @@ export const getAllPosts = asyncHandler(
 );
 
 // Get single post
- // Populate with selected fields only
+// Populate with selected fields only
 export const getPost = asyncHandler(async (req, res) => {
 
   const post = await Post.findById(req.params.id)
@@ -79,8 +80,10 @@ export const getPost = asyncHandler(async (req, res) => {
   const comments = await Comment.find({ post: post._id })
     .populate('author', 'avatar username firstName lastName isVerified');
 
-  res.status(200).json({ ...post.toObject(), 
-    comments: sanitizeComment(comments) });
+  res.status(200).json({
+    ...post.toObject(),
+    comments: sanitizeComment(comments)
+  });
 });
 
 
@@ -91,29 +94,63 @@ export const createPost = asyncHandler(async (req, res) => {
   if (!userId) {
     return res.status(401).json({ message: "Unauthorized: User ID missing" });
   }
-  
+
   console.log("Request Body:", req.body); // Debugging
-  console.log("Request Files:", req.files); // Debugging
+
   const { content } = req.body;
 
-  if(!content) {
+  if (!content) {
     return res.status(401).json({ message: "content is required" });
   }
   // Getting tag[] from post
   const tags = extractTags(content);
-
-
+  // Access images from req.files
+  const images = req.files?.images ? req.files.images.map(file => file.path) : [];
+  console.log("Request Files:", images); // Debugging
   const post = new Post({
     content,
     author: userId,
     tags,
-    image: req.files ? req.files.map(file => file.path) : [] // Store multiple image paths
+    image: images// Store multiple image paths
   });
 
   try {
     // Save the post to the database
     const savePost = await post.save();
+    // Get user information for notifications
+    const user = await User.findById(userId).select('username followers');
 
+    // Send notifications to followers about new post
+    if (user && user.followers && user.followers.length > 0) {
+      // Create notification message
+      const notificationMessage = `${user.username || 'Someone'} created a new post`;
+
+      // Send real-time notifications to online followers
+      NotificationService.sendToUsers(
+        user.followers.map(follower => follower.toString()),
+        {
+          type: 'new_post',
+          message: notificationMessage,
+          postId: savePost._id,
+          senderId: userId,
+          createdAt: new Date(),
+          read: false
+        }
+      );
+
+      // Save notifications to database for all followers
+      const notificationPromises = user.followers.map(followerId => {
+        return new Notification({
+          recipient: followerId,
+          sender: userId,
+          type: 'new_post',
+          post: savePost._id,
+          message: notificationMessage
+        }).save();
+      });
+
+      await Promise.all(notificationPromises);
+    }
     // Exclude `_id` and `__v` from response
     const { __v, ...postWithoutVersion } = savePost.toObject();
 
@@ -125,44 +162,111 @@ export const createPost = asyncHandler(async (req, res) => {
 });
 
 
-// Update post
-export const updatePost = asyncHandler(
-  async (req, res) => {
-    const userId = req.user.userId || req.user._id || req.user.user?._id;
+// Update post controller
+export const updatePost = asyncHandler(async (req, res) => {
+  const userId = req.user.userId || req.user._id || req.user.user?._id;
 
-    if (!userId) {
-      return res.status(401).json({ message: "Unauthorized: User ID missing" });
-    }
-    const { content } = req.body;
-    const post = await Post.findById(req.params.id);
-    
-    if (!post) {
-      return res.status(404).json({ message: 'Post not found' });
-    }
-
-
-    
-    if (post.author.toString() !== userId) {
-      return res.status(403).json({ message: 'Unauthorized to update this post' });
-    }
-    
-    post.content = content;
-    post.updatedAt = Date.now();
-    post.image = req.file ? req.file.path : post.image;
-    await post.save();
-    res.status(200).json(post);
+  if (!userId) {
+    return res.status(401).json({ message: "Unauthorized: User ID missing" });
   }
-);
+
+  const { content } = req.body;
+  const post = await Post.findById(req.params.id);
+
+  if (!post) {
+    return res.status(404).json({ message: 'Post not found' });
+  }
+
+  if (post.author.toString() !== userId) {
+    return res.status(403).json({ message: 'Unauthorized to update this post' });
+  }
+
+  // Prepare updated data
+  const updatedData = {
+    content,
+    updatedAt: Date.now(),
+  };
+
+  // Handle multiple file uploads
+  if (req.files && req.files.length > 0) {
+    // Map uploaded files to their paths
+    const newImages = req.files.map((file) => file.path);
+
+    // Combine existing images with new ones (if any)
+    updatedData.image = post.image ? [...post.image, ...newImages] : newImages;
+  }
+  console.log("Updated Data:", updatedData); // Debugging
+  // Update the post in the database
+  const updatedPost = await Post.findOneAndUpdate(
+    { _id: req.params.id },
+    { $set: updatedData },
+    { new: true }
+  );
+
+  if (!updatedPost) {
+    return res.status(404).json({ message: 'Post not found' });
+  }
+
+  // Get user information for notification
+  const user = await User.findById(userId).select('username');
+
+  // Find users who should be notified (commenters and likers)
+  // Find commenters
+  const commenters = await Comment.find({ post: post._id })
+    .distinct('author')
+    .where('author').ne(userId); // Exclude post owner
+
+  // Find users who liked the post
+  const likers = await Like.find({ post: post._id })
+    .distinct('user')
+    .where('user').ne(userId); // Exclude post owner
+
+  // Combine and deduplicate users to notify
+  const usersToNotify = Array.from(new Set([...commenters, ...likers]));
+
+  if (usersToNotify.length > 0) {
+    // Create notification message
+    const notificationMessage = `${user.username || 'Someone'} updated a post you interacted with`;
+
+    // Send real-time notifications
+    NotificationService.sendToUsers(
+      usersToNotify.map(id => id.toString()),
+      {
+        type: 'post_edit',
+        message: notificationMessage,
+        postId: post._id,
+        senderId: userId,
+        createdAt: new Date(),
+        read: false
+      }
+    );
+
+    // Save notifications to database
+    const notificationPromises = usersToNotify.map(recipientId => {
+      return new Notification({
+        recipient: recipientId,
+        sender: userId,
+        type: 'post_edit',
+        post: post._id,
+        message: notificationMessage
+      }).save();
+    });
+
+    await Promise.all(notificationPromises);
+  }
+
+  res.status(200).json(updatedPost);
+});
 
 // Delete post
 export const deletePost = asyncHandler(
   async (req, res) => {
     const post = await Post.findById(req.params.id);
-    
+
     if (!post) {
       return res.status(404).json({ message: 'Post not found' });
     }
-    
+
     const userId = req.user.userId || req.user._id || req.user.user?._id;
 
     if (!userId) {
@@ -172,156 +276,64 @@ export const deletePost = asyncHandler(
     if (post.author.toString() !== userId.toString()) {
       return res.status(403).json({ message: 'Unauthorized to delete this post' });
     }
-    
+    // Get user information for notification
+    const user = await User.findById(userId).select('username');
+
+    // Find users who should be notified (commenters and likers)
+    // Find commenters
+    const commenters = await Comment.find({ post: post._id })
+      .distinct('author')
+      .where('author').ne(userId); // Exclude post owner
+
+    // Find users who liked the post
+    const likers = await Like.find({ post: post._id })
+      .distinct('user')
+      .where('user').ne(userId); // Exclude post owner
+
+    // Combine and deduplicate users to notify
+    const usersToNotify = Array.from(new Set([...commenters, ...likers]));
+
+    if (usersToNotify.length > 0) {
+      // Create notification message
+      const notificationMessage = `${user.username || 'Someone'} deleted a post you interacted with`;
+
+      // Send real-time notifications before deleting
+      NotificationService.sendToUsers(
+        usersToNotify.map(id => id.toString()),
+        {
+          type: 'post_delete',
+          message: notificationMessage,
+          senderId: userId,
+          createdAt: new Date(),
+          read: false
+        }
+      );
+
+      // Save notifications to database
+      const notificationPromises = usersToNotify.map(recipientId => {
+        return new Notification({
+          recipient: recipientId,
+          sender: userId,
+          type: 'post_delete',
+          message: notificationMessage
+        }).save();
+      });
+
+      await Promise.all(notificationPromises);
+    }
+
+    // Clean up comments associated with the post
+    await Comment.deleteMany({ post: post._id });
+
+    // Clean up likes associated with the post
+    await Like.deleteMany({ post: post._id });
+
+    // Delete the post
     await post.deleteOne();
     res.status(200).json({ message: 'Post deleted successfully' });
   }
 );
 
-// Like/Unlike post
-export const toggleLike = asyncHandler(
-  async (req, res) => {
-    try {
-    const post = await Post.findById(req.params.id);
-    if (!post) {
-      return res.status(404).json({ message: 'Post not found' });
-    }
-    const userId = req.user.userId || req.user._id || req.user.user?._id;
-
-    if (!userId) {
-      return res.status(401).json({ message: "Unauthorized: User ID missing" });
-    }
-
-    const existingLike = await Like.findOne({ 
-      post: post._id, 
-      user: userId
-    });
-
-    if (existingLike) {
-      await existingLike.deleteOne();
-      post.likeCount--;
-      res.status(200).json({ message: 'Like- successfully' });
-    } else {
-      await Like.create({ 
-        post: post._id, 
-        user: userId
-      });
-      post.likeCount++;
-    }
-
-    await post.save();
-    res.status(200).json({ message: 'Like+ successfully' });
-  } catch (error) {
-    console.error(error);
-    res.status(500).json({ message: 'Internal Server Error' });
-    }
-  }
-);
-
-// Add comment to post
-// param: postId, content, author.
-export const addComment = asyncHandler(
-  async (req, res) => {
-    const { content } = req.body;
-    const post = await Post.findById(req.params.id);
-    
-    if (!post) {
-      return res.status(404).json({ message: 'Post not found' });
-    }
-    console.log("User object in request:", req.user); 
-    
-        // Ensure correct extraction of user ID
-    const userId = req.user.userId || req.user._id || req.user.user?._id;
-
-    if (!userId) {
-      return res.status(401).json({ message: "Unauthorized: User ID missing" });
-    }
-
-    // Create a new comment using Mongoose model
-    const newComment = await Comment.create({
-      content,
-      image: req.file ? req.file.path : null,
-      author: userId, // Ensure ObjectId type
-      post: post._id,  // Ensure 'post' field is set correctly
-      createdAt: new Date(),
-    });
-    
-    post.comments.push(newComment);
-    
-    await post.save();
-    res.status(201).json(newComment);
-  }
-);
-
-// Get all posts from current user and followed of current user
-export const getFeedPosts = asyncHandler(async (req, res) => {
-  const page = parseInt(req.query.page)  || 1 ;
-  const limit = parseInt(req.query.limit ) || 10;
-  const skip = (page - 1) * limit;
-  const userId = req.user.userId || req.user._id || req.user.user?._id;
-
-  if (!userId) {
-    return res.status(401).json({ message: "Unauthorized: User ID missing" });
-  }
-  const currentUser = await User.findById(userId);
-  
-  // Get posts from current user and followed users
-  const posts = await Post.find({
-    $or: [
-      { author: userId }, // Current user's posts
-      { author: { $in: currentUser.following } } // Posts from followed users
-    ]
-  })
-    .sort({ createdAt: -1 }) // Most recent first
-    .skip(skip)
-    .limit(limit)
-    .populate('author', 'username avatar')
-    .populate('comments.author', 'username avatar');
-
-  const total = await Post.countDocuments({
-    $or: [
-      { author: userId },
-      { author: { $in: currentUser.following } }
-    ]
-  });
-
-  res.status(200).json({
-    posts,
-    currentPage: page,
-    totalPages: Math.ceil(total / limit),
-    totalPosts: total
-  });
-});
 
 
-// Get most popular tags
-export const getMostFrequentTag = async (req, res) => {
-  try {
-    const oneDayAgo = new Date();
-    oneDayAgo.setDate(oneDayAgo.getDate() - 1);
 
-    const result = await Post.aggregate([
-      { $unwind: "$tags" }, // Flatten the tags array
-      { 
-        $group: { 
-          _id: "$tags", 
-          count: { $sum: 1 } // Count occurrences
-        }
-      },
-      { $sort: { count: -1 } }, // Sort by highest count
-      { $limit: 5 } // Get the top 5 tags
-    ]).exec(); // Ensure execution
-
-    // console.log("Top Tags:", result);
- 
-
-    if (result.length === 0) {
-      return res.status(200).json({ message: "No tags found for today." });
-    }
-/* 
-    res.status(200).json({ mostFrequentTag: result[0]._id, count: result[0].count }) */;
-    res.status(200).json(result.map((tag) => ({ tag: tag._id, count: tag.count })));
-  } catch (error) {
-    res.status(500).json({ message: "Server error", error });
-  }
-};
